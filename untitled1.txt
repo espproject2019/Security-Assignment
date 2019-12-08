@@ -1,0 +1,137 @@
+git clone https://bitbucket.org/stefanholek/pki-example-1
+cd pki-example-1
+# Create Root CA
+mkdir -p ca/root-ca/private ca/root-ca/db crl certs
+chmod 700 ca/root-ca/private
+
+cp /dev/null ca/root-ca/db/root-ca.db
+cp /dev/null ca/root-ca/db/root-ca.db.attr
+echo 01 > ca/root-ca/db/root-ca.crt.srl
+echo 01 > ca/root-ca/db/root-ca.crl.srl
+
+openssl req -new \
+    -config etc/root-ca.conf \
+    -out ca/root-ca.csr \
+    -keyout ca/root-ca/private/root-ca.key
+    
+    openssl ca -selfsign \
+    -config etc/root-ca.conf \
+    -in ca/root-ca.csr \
+    -out ca/root-ca.crt \
+    -extensions root_ca_ext
+   
+   #create signing CA
+mkdir -p ca/signing-ca/private ca/signing-ca/db crl certs
+chmod 700 ca/signing-ca/private
+
+cp /dev/null ca/signing-ca/db/signing-ca.db
+cp /dev/null ca/signing-ca/db/signing-ca.db.attr
+echo 01 > ca/signing-ca/db/signing-ca.crt.srl
+echo 01 > ca/signing-ca/db/signing-ca.crl.srl
+
+openssl req -new \
+    -config etc/signing-ca.conf \
+    -out ca/signing-ca.csr \
+    -keyout ca/signing-ca/private/signing-ca.key
+openssl ca \
+    -config etc/root-ca.conf \
+    -in ca/signing-ca.csr \
+    -out ca/signing-ca.crt \
+    -extensions signing_ca_ext
+    
+    
+openssl req -new \
+    -config etc/email.conf \
+    -out certs/fred.csr \
+    -keyout certs/jumana.key
+openssl ca \
+    -config etc/signing-ca.conf \
+    -in certs/jumana.csr \
+    -out certs/jumana.crt \
+    -extensions email_ext
+    
+SAN=DNS:www.simple.org \
+openssl req -new \
+    -config etc/server.conf \
+    -out certs/simple.org.csr \
+    -keyout certs/simple.org.key
+    
+openssl ca \
+    -config etc/signing-ca.conf \
+    -in certs/simple.org.csr \
+    -out certs/simple.org.crt \
+    -extensions server_ext
+    
+#Revoke Certificate
+openssl ca \
+    -config etc/signing-ca.conf \
+    -revoke ca/signing-ca/01.pem \
+    -crl_reason superseded
+    
+openssl ca -gencrl \
+    -config etc/signing-ca.conf \
+    -out crl/signing-ca.crl
+    
+#output formats
+openssl x509 \
+    -in certs/jumana.crt \
+    -out certs/jumana.cer \
+    -outform der
+    
+openssl crl2pkcs7 -nocrl \
+    -certfile ca/signing-ca.crt \
+    -certfile ca/root-ca.crt \
+    -out ca/signing-ca-chain.p7c \
+    -outform der
+    
+openssl pkcs12 -export \
+    -name "Jumana Nadir" \
+    -inkey certs/jumana.key \
+    -in certs/jumana.crt \
+    -out certs/jumana.p12
+    
+cat ca/signing-ca.crt ca/root-ca.crt > \
+    ca/signing-ca-chain.pem
+
+cat certs/jumana.key certs/jumana.crt > \
+    certs/jumana.pem
+openssl req \
+    -in certs/jumana.csr \
+    -noout \
+    -text
+    
+openssl x509 \
+    -in certs/jumana.crt \
+    -noout \
+    -text
+openssl crl \
+    -in crl/signing-ca.crl \
+    -inform der \
+    -noout \
+    -text
+    
+openssl pkcs7 \
+    -in ca/signing-ca-chain.p7c \
+    -inform der \
+    -noout \
+    -text \
+    -print_certs
+openssl pkcs12 \
+    -in certs/jumana.p12 \
+    -nodes \
+    -info
+#Configure TLS on Tomcat
+"%JAVA_HOME%\bin\keytool" -genkey -alias tomcat -keyalg RSA
+
+#To configure an TSL connector that uses JSSE,
+<!-- Define a SSL Coyote HTTP/1.1 Connector on port 8443 -->
+<Connector
+           protocol="org.apache.coyote.http11.Http11NioProtocol"
+           port="8443" maxThreads="200"
+           scheme="https" secure="true" SSLEnabled="true"
+           keystoreFile="${user.home}/.keystore" keystorePass="changeit"
+           clientAuth="false" sslProtocol="TLS"/>
+           
+           
+
+
